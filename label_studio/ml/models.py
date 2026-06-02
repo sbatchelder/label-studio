@@ -48,6 +48,14 @@ class MLBackend(models.Model):
         default=False,
         help_text=('Used to interactively annotate tasks. ' 'If true, model returns one list with results'),
     )
+    exclude_existing_annotations = models.BooleanField(
+        _('exclude_existing_annotations'),
+        default=False,
+        help_text=(
+            'If true, during interactive preannotation only the tool-created prompt region will be sent to '
+            'the ML Backend. Other preexisting annotations will not be included in the request context.'
+        ),
+    )
     url = models.TextField(
         _('url'),
         help_text='URL for the machine learning model server',

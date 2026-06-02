@@ -157,8 +157,14 @@ export const DataManagerPage = ({ ...props }) => {
     if (interactiveBacked) {
       dataManager.on("lsf:regionFinishedDrawing", (reg, group) => {
         const { lsf, task, currentAnnotation: annotation } = dataManager.lsf;
-        const ids = group.map((r) => r.cleanId);
-        const result = annotation.serializeAnnotation().filter((res) => ids.includes(res.id));
+        let result;
+        if (interactiveBacked.exclude_existing_annotations) {
+          // Serialize only the just-drawn regions to avoid walking heavy preexisting annotations (e.g. brush masks).
+          result = group.flatMap((area) => area.results.map((r) => r.serialize())).filter(Boolean);
+        } else {
+          const ids = group.map((r) => r.cleanId);
+          result = annotation.serializeAnnotation().filter((res) => ids.includes(res.id));
+        }
 
         const suggestionsRequest = api.callApi("mlInteractive", {
           params: { pk: interactiveBacked.id },

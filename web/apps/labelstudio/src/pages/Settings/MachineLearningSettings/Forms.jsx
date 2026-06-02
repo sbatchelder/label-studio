@@ -7,6 +7,7 @@ import "./MachineLearningSettings.scss";
 
 const CustomBackendForm = ({ action, backend, project, onSubmit }) => {
   const [selectedAuthMethod, setAuthMethod] = useState("NONE");
+  const [isInteractive, setIsInteractive] = useState(backend?.is_interactive ?? false);
   const [, setMLError] = useState();
 
   return (
@@ -67,8 +68,19 @@ const CustomBackendForm = ({ action, backend, project, onSubmit }) => {
           name="is_interactive"
           label="Interactive preannotations"
           description="If enabled some labeling tools will send requests to the ML Backend interactively during the annotation process."
+          onChange={(e) => setIsInteractive(e.target.checked)}
         />
       </Form.Row>
+
+      {isInteractive && (
+        <Form.Row columnCount={1}>
+          <Toggle
+            name="exclude_existing_annotations"
+            label="Exclude existing annotations"
+            description="If enabled, during interactive preannotation, only the tool-created prompt will be sent to the ML Backend. Other preexisting annotations will not be included in context for ML Backend model request."
+          />
+        </Form.Row>
+      )}
 
       <Form.Actions>
         <Button type="submit" look="primary" onClick={() => setMLError(null)} aria-label="Save machine learning form">

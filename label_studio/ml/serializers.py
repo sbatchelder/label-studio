@@ -95,6 +95,7 @@ class MLBackendSerializer(serializers.ModelSerializer):
             'state',
             'readable_state',
             'is_interactive',
+            'exclude_existing_annotations',
             'url',
             'error_message',
             'title',

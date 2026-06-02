@@ -34,6 +34,13 @@ _ml_backend_schema = {
             'type': 'boolean',
             'description': 'Is interactive',
         },
+        'exclude_existing_annotations': {
+            'type': 'boolean',
+            'description': (
+                'If true, during interactive preannotation only the tool-created prompt region will be sent to '
+                'the ML Backend. Other preexisting annotations will not be included in the request context.'
+            ),
+        },
         'title': {
             'type': 'string',
             'description': 'Title',
