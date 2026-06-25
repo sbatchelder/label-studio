@@ -29,6 +29,100 @@ Konva.showWarnings = false;
 const hotkeys = Hotkey("Image");
 const imgDefaultProps = { crossOrigin: "anonymous" };
 
+// --- Keyboard panning of a zoomed image -------------------------------------
+// Arrow keys pan the visible window of a zoomed-in image.
+// We use a capture-phase keydown listener (instead of the Hotkey system) so we
+// only call preventDefault when there is actually a zoomed image to pan -
+// otherwise the arrow keys keep their default behavior (page scroll, etc).
+// Behavior:
+//  - only acts while item.zoomScale > 1 (gated to zoomed images)
+//  - multi-image valueList is handled for free (setZoomPosition targets the
+//    current image entity)
+//  - multiple <Image> tags: the last-interacted image wins (interaction =
+//    mousedown on its canvas or wheel zoom/pan over it)
+//  - yields entirely to TimeSeries when a timeseries object is in the config
+const PAN_STEP = 0.1; // fraction of the visible canvas moved per key press
+
+// Direction -> [signX, signY] for zoomingPosition. Matches the trackpad scroll
+// convention in handleZoom (ArrowRight reveals content to the right, etc).
+const PAN_DIRECTIONS = {
+  ArrowLeft: [1, 0],
+  ArrowRight: [-1, 0],
+  ArrowUp: [0, 1],
+  ArrowDown: [0, -1],
+};
+
+const mountedImages = new Set();
+let lastInteractedImage = null;
+
+const setLastInteractedImage = (item) => {
+  if (item) lastInteractedImage = item;
+};
+
+const isEditableTarget = () => {
+  const el = document.activeElement;
+  if (!el) return false;
+  return /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable;
+};
+
+const isZoomedImage = (item) => isAlive(item) && item.zoomScale > 1;
+
+const resolvePanTarget = () => {
+  let target =
+    lastInteractedImage && mountedImages.has(lastInteractedImage) && isZoomedImage(lastInteractedImage)
+      ? lastInteractedImage
+      : null;
+
+  // No clear last-interacted image, but exactly one is zoomed - pan that one.
+  if (!target) {
+    const zoomed = [...mountedImages].filter(isZoomedImage);
+    if (zoomed.length === 1) target = zoomed[0];
+  }
+  if (!target) return null;
+
+  // TimeSeries always takes precedence over image keyboard pan when present.
+  if (target.annotation?.objects?.some((obj) => obj.type === "timeseries")) return null;
+
+  return target;
+};
+
+const handlePanKeydown = (e) => {
+  const dir = PAN_DIRECTIONS[e.key];
+
+  if (!dir) return;
+  if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return; // modifier combos belong to other tools
+  if (isEditableTarget()) return;
+
+  const item = resolvePanTarget();
+
+  if (!item) return; // nothing to pan -> leave the key to its default behavior
+
+  e.preventDefault();
+  e.stopPropagation();
+
+  const { width, height } = item.canvasSize;
+
+  item.setZoomPosition(
+    item.zoomingPositionX + dir[0] * width * PAN_STEP,
+    item.zoomingPositionY + dir[1] * height * PAN_STEP,
+  );
+};
+
+const registerImagePan = (item) => {
+  if (mountedImages.size === 0) {
+    window.addEventListener("keydown", handlePanKeydown, true);
+  }
+  mountedImages.add(item);
+};
+
+const unregisterImagePan = (item) => {
+  mountedImages.delete(item);
+  if (lastInteractedImage === item) lastInteractedImage = null;
+  if (mountedImages.size === 0) {
+    window.removeEventListener("keydown", handlePanKeydown, true);
+  }
+};
+
 export const splitRegions = (regions) => {
   const brushRegions = [];
   const shapeRegions = [];
@@ -620,6 +714,9 @@ export default observer(
     handleMouseDown = (e) => {
       this.mouseDown = true;
       const { item } = this.props;
+
+      setLastInteractedImage(item);
+
       const isPanTool = item.getToolsManager().findSelectedTool()?.fullName === "ZoomPanTool";
       const isMoveTool = item.getToolsManager().findSelectedTool()?.fullName === "MoveTool";
 
@@ -873,6 +970,8 @@ export default observer(
      * - Two-finger scroll: Pan the image when zoomed in
      */
     handleZoom = (e) => {
+      setLastInteractedImage(this.props.item);
+
       if (e.evt?.ctrlKey || e.evt?.metaKey) {
         e.evt.preventDefault();
 
@@ -965,7 +1064,13 @@ export default observer(
       this.attachObserver(item.containerRef);
       this.updateReadyStatus();
 
+      registerImagePan(item);
+
       hotkeys.addDescription("shift", "Pan image");
+      hotkeys.addDescription("left", "Pan a zoomed image left");
+      hotkeys.addDescription("right", "Pan a zoomed image right");
+      hotkeys.addDescription("up", "Pan a zoomed image up");
+      hotkeys.addDescription("down", "Pan a zoomed image down");
     }
 
     attachObserver = (node) => {
@@ -988,7 +1093,13 @@ export default observer(
       this.detachObserver();
       window.removeEventListener("resize", this.onResize);
 
+      unregisterImagePan(this.props.item);
+
       hotkeys.removeDescription("shift");
+      hotkeys.removeDescription("left");
+      hotkeys.removeDescription("right");
+      hotkeys.removeDescription("up");
+      hotkeys.removeDescription("down");
     }
 
     componentDidUpdate() {
