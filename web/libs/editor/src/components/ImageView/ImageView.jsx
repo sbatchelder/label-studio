@@ -34,6 +34,106 @@ installTolerantHitDetection(Konva);
 const hotkeys = Hotkey("Image");
 const imgDefaultProps = { crossOrigin: "anonymous" };
 
+// --- Keyboard panning of a zoomed image -------------------------------------
+// Arrow keys pan the visible window of a zoomed-in image.
+// Behavior:
+//  - only acts while item.zoomScale > 1 (gated to zoomed images)
+//  - multi-image valueList is handled for free (setZoomPosition targets the
+//    current image entity)
+//  - multiple <Image> tags: the last-interacted image wins (interaction =
+//    mousedown on its canvas or wheel zoom/pan over it)
+const PAN_STEP = 0.1; // fraction of the visible canvas moved per key press
+
+// Direction -> [signX, signY] for zoomingPosition. Matches the trackpad scroll
+// convention in handleZoom (right/down reveal content in that direction).
+const PAN_ON_ZOOM_HOTKEYS = {
+  "tool:pan-on-zoom-left": [1, 0],
+  "tool:pan-on-zoom-right": [-1, 0],
+  "tool:pan-on-zoom-up": [0, 1],
+  "tool:pan-on-zoom-down": [0, -1],
+};
+
+const mountedImages = new Set();
+let lastInteractedImage = null;
+let imagePanHotkeyRegistered = false;
+
+const setLastInteractedImage = (item) => {
+  if (item) {
+    lastInteractedImage = item;
+    syncImagePanHotkey();
+  }
+};
+
+const isEditableTarget = () => {
+  const el = document.activeElement;
+  if (!el) return false;
+  return /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable;
+};
+
+const isZoomedImage = (item) => isAlive(item) && item.zoomScale > 1;
+
+const resolvePanTarget = () => {
+  let target =
+    lastInteractedImage && mountedImages.has(lastInteractedImage) && isZoomedImage(lastInteractedImage)
+      ? lastInteractedImage
+      : null;
+
+  // No clear last-interacted image, but exactly one is zoomed - pan that one.
+  if (!target) {
+    const zoomed = [...mountedImages].filter(isZoomedImage);
+    if (zoomed.length === 1) target = zoomed[0];
+  }
+  if (!target) return null;
+
+  return target;
+};
+
+const panZoomedImage = (dir) => (e) => {
+  if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return; // modifier combos belong to other tools
+  if (isEditableTarget()) return;
+
+  const item = resolvePanTarget();
+
+  if (!item) return;
+
+  e.preventDefault();
+  e.stopPropagation();
+
+  const { width, height } = item.canvasSize;
+
+  item.setZoomPosition(
+    item.zoomingPositionX + dir[0] * width * PAN_STEP,
+    item.zoomingPositionY + dir[1] * height * PAN_STEP,
+  );
+};
+
+function syncImagePanHotkey() {
+  const shouldRegister = Boolean(resolvePanTarget());
+
+  if (shouldRegister && !imagePanHotkeyRegistered) {
+    Object.entries(PAN_ON_ZOOM_HOTKEYS).forEach(([name, dir]) => {
+      hotkeys.addNamed(name, panZoomedImage(dir));
+    });
+    imagePanHotkeyRegistered = true;
+  } else if (!shouldRegister && imagePanHotkeyRegistered) {
+    Object.keys(PAN_ON_ZOOM_HOTKEYS).forEach((name) => {
+      hotkeys.removeNamed(name);
+    });
+    imagePanHotkeyRegistered = false;
+  }
+}
+
+const registerImagePan = (item) => {
+  mountedImages.add(item);
+  syncImagePanHotkey();
+};
+
+const unregisterImagePan = (item) => {
+  mountedImages.delete(item);
+  if (lastInteractedImage === item) lastInteractedImage = null;
+  syncImagePanHotkey();
+};
+
 export const splitRegions = (regions) => {
   const brushRegions = [];
   const shapeRegions = [];
@@ -625,6 +725,9 @@ export default observer(
     handleMouseDown = (e) => {
       this.mouseDown = true;
       const { item } = this.props;
+
+      setLastInteractedImage(item);
+
       const isPanTool = item.getToolsManager().findSelectedTool()?.fullName === "ZoomPanTool";
       const isMoveTool = item.getToolsManager().findSelectedTool()?.fullName === "MoveTool";
 
@@ -878,6 +981,8 @@ export default observer(
      * - Two-finger scroll: Pan the image when zoomed in
      */
     handleZoom = (e) => {
+      setLastInteractedImage(this.props.item);
+
       if (e.evt?.ctrlKey || e.evt?.metaKey) {
         e.evt.preventDefault();
 
@@ -886,6 +991,7 @@ export default observer(
 
         // Unified smooth zoom behavior for both trackpad and mouse wheel
         item.handleZoom(e.evt.deltaY, stage.getPointerPosition(), e.evt.ctrlKey);
+        syncImagePanHotkey();
       } else if (e.evt) {
         // Two fingers scroll (panning) - only when zoomed in
         const { item } = this.props;
@@ -970,6 +1076,8 @@ export default observer(
       this.attachObserver(item.containerRef);
       this.updateReadyStatus();
 
+      registerImagePan(item);
+
       hotkeys.addDescription("shift", "Pan image");
     }
 
@@ -993,12 +1101,15 @@ export default observer(
       this.detachObserver();
       window.removeEventListener("resize", this.onResize);
 
+      unregisterImagePan(this.props.item);
+
       hotkeys.removeDescription("shift");
     }
 
     componentDidUpdate() {
       this.onResize();
       this.updateReadyStatus();
+      syncImagePanHotkey();
     }
 
     updateReadyStatus() {
