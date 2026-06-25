@@ -67,7 +67,7 @@ export const useHotkeys = () => {
 
       // Transform custom hotkeys to editor format (same logic as base.html)
       const editorCustomHotkeys: Record<string, any> = {};
-      const prefixRegex = /^(annotation|timeseries|audio|regions|video|image_gallery|tools):(.*)/;
+      const prefixRegex = /^(annotation|timeseries|audio|regions|video|image_gallery|tools|zoomed_image):(.*)/;
 
       for (const key in customHotkeys) {
         const match = key.match(prefixRegex);
