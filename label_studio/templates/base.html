@@ -105,7 +105,7 @@
 
   // Filter custom hotkeys for editor-specific ones
   var editorCustomHotkeys = {};
-  var prefixRegex = /^(annotation|timeseries|audio|regions|video|image_gallery|tools):(.*)/;
+  var prefixRegex = /^(annotation|timeseries|audio|regions|video|image_gallery|tools|zoomed_image):(.*)/;
 
   for (let key in __customHotkeys) {
       const match = key.match(prefixRegex);
